@@ -1,5 +1,7 @@
-%% 
-addpath('../workflow')
+%% decoder trained using the same dataset as cca
+% both svm and cca are trained using whole tw activity, no more sliding window
+addpath('../calcium_analysis');
+addpath(genpath('../multiarea_analysis'));
 addpath(genpath('./'));
 addpath(genpath('../canonical-correlation-maps-main')); 
 
@@ -23,13 +25,22 @@ dataset = [131:256, 388:672];
 dataset = dataset(end:-1:1);
 datasheet = get_data_sheet('multiarea');
 result_name = 'taskvar_vs_cca_axis_rep_sess_120_pc30';
+% result_name = 'taskvar_vs_cca_axis_rep_sess_120_pc60';
 
+% shuffle_method = 'frame';
 shuffle_method = 'trial';
+% shuffle_method = 'all';
 sig_dim_thr = 1.96;
+% sig_dim_thr = 3;
 weighted_sim = 1;
 sim_shuff_method = 'model';
-max_pc = 30; 
+% sim_shuff_method = 'perm';
+% sim_shuff_method = 'const';
+% var_thr = 70;
+% max_pc = 30; 
+max_pc = 60; 
 num_rep = 10;
+% num_rep = 20;
 
 sess_len = 120; min_sess_len = 5;
 
@@ -43,6 +54,7 @@ plot_result = 0;
 for dataid = dataset
     
 %% load data
+% dinfo = data_info_gs(dataid, 'multiarea', opts.base_dir);
 dinfo = data_info(datasheet, dataid, 'multiarea', opts.base_dir);
 spath = fullfile(dinfo.work_dir, opts.result_dir);
 eid = get_exp_condition_idx(dinfo);
@@ -125,7 +137,7 @@ for n = 1:num_sess
 end
 
 
-%% repeat the random split many times, save to different files
+%% repeat the random split many times, save to different files for now
 for rep_idx = 1:num_rep
     
     tic;
@@ -167,12 +179,14 @@ for rep_idx = 1:num_rep
                 v(isnan(v)) = 0;
                 [pc_coef{m,a,i}, ~, ~, ~, explained_raw, mu] = pca(v);
                 explained = cumsum(explained_raw);
+                % S_num(m,a,i) = find(explained>var_thr, 1);  % define by explained variance
                 S_num(m,a,i) = min(max_pc, length(explained));
                 var_explained(m,a,i) = explained(S_num(m,a,i));
                 pca_weight{m,a,i} = explained_raw(1:S_num(m,a,i))'/100;
                 pc_coef{m,a,i} = pc_coef{m,a,i}(:,1:S_num(m,a,i));
                 for t = 1:data.trial_length
                     v = S_data{a}(idx_sub{m,a,i},sess_idx{m},t); 
+%                     v(isnan(v)) = 0;
                     sc = (v - mu'*ones(1,length(sess_idx{m})))'*pc_coef{m,a,i};
                     data.S_pc{m,a,i}(:,:,t) = sc';
                 end
@@ -226,6 +240,7 @@ for rep_idx = 1:num_rep
                     
                     v1 = nanmean(nanmean(X(:,Y==1,tw),2),3);
                     v2 = nanmean(nanmean(X(:,Y==2,tw),2),3);
+%                     b = (v1+v2)/2;
                     b = (v1-v2)/2;
                     task_axis{m,k,a,sub_idx} = b;
                     
@@ -655,6 +670,7 @@ for rep_idx = 1:num_rep
                             xs = Xn;
                             xs = xs(randperm(nt),randperm(N))*w;
                             try; [~,~,~,p(s)] = perfcurve(Y, xs, 2);
+%                             try; [~,~,~,p(s)] = perfcurve(Y, xs(:,s), 2);
                             catch ME; continue; 
                             end
                         end
@@ -673,6 +689,7 @@ for rep_idx = 1:num_rep
                             xs = Xn;
                             xs = xs(randperm(nt),randperm(N))*w;
                             try; [~,~,~,p(s)] = perfcurve(Y, xs, 2);
+%                             try; [~,~,~,p(s)] = perfcurve(Y, xs(:,s), 2);
                             catch ME; continue; 
                             end
                         end

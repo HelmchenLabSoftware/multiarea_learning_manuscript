@@ -1,5 +1,9 @@
-addpath('../workflow')
 addpath(genpath('./'));
+
+addpath('../tensor_toolbox_2.6');
+addpath('../tensor_toolbox_2.6/met');
+addpath('../tensor-demo-master/matlab');
+addpath('../nonnegfac-matlab-master');
 
 %%
 clear; clc;
@@ -13,8 +17,7 @@ opts.data_dir = 'data_suite2p';
 opts.result_dir = 'results_suite2p';
 result_name = 'responsive_neuron_learning_no_early_lick_sess_120';
  
-dataset = [131:186,188:256, 389:672]; 
-% dataset = [440:672];
+dataset = [131:186,188:256, 389:672];
 var_to_read = {'S_trial', 'num_neuron', 'num_trial', 'trial_vec',...
     'trial_length', 'ts', 'ts_fr', 'first_correct_lick', 'choice_time',...
     'task_label', 'S_rew', 'F0'};
@@ -51,12 +54,14 @@ num_trial_type = 14;
 tnum = num_trial_type/2;
 
 %% normalize data
-% s_thr = 0.1;
 f = fspecial('gaussian',[1,3], 1);
 for a = 1:2
     
+    data.F0{a}(data.F0{a}==0) = 1;
+    data.S_trial{a} = data.S_trial{a}./repmat(data.F0{a}, 1, data.num_trial, data.trial_length); 
+    
     % smooth with a gaussian kernal
-%     data.S_trial{a} = smooth_spike_data(data.S_trial{a}, f);
+    data.S_trial{a} = smooth_spike_data(data.S_trial{a}, f);
     
     % zscore
     v = reshape(permute(data.S_trial{a}, [3,2,1]), [], data.num_neuron(a));
@@ -97,6 +102,16 @@ for a = 1:2
         S_data{a}(:,i,idx_remove) = NaN;
     end
 end
+
+
+%% align data to standard
+for a = 1:2
+    S_data{a} = align_trial_to_standard(S_data{a}, S_ts, standard_ts);
+end
+
+data.trial_length = trial_len;
+S_ts = standard_ts;
+
 
 %% remove mismatch trials
 keep_idx = data.trial_vec<=4;
@@ -276,133 +291,11 @@ for m = 1:num_sess
 end
 
 
-
-%% plotting
-if plot_result
-    
-    m = 1;
-    trial_vec_sess = data.trial_vec(sess_idx{m});
-    S_sess = cell(1,2);
-    for a = 1:2
-        S_sess{a} = S_data{a}(:,sess_idx{m},:);
-    end
-    
-%% plot traces
-t = 2;
-figure; set(gcf,'color','w'); sc = 1;
-for a = 1:2
-    k_idx = responsive_neuron{m,a,t};
-    subplot(1,2,a); hold on;
-    if ~isempty(k_idx)
-        plotTransients_nofig(squeeze(nanmean(S_sess{a}...
-            (k_idx,trial_vec_sess<3,:),2)), fr, sc, mycc.blue);
-        draw_trial_structure(data.ts_fr(2:5));
-        title(area_str{a});
-    end
-end
-
-%% individual cells
-a = 2; t = 3;
-k_idx = responsive_neuron{m,a,t};
-N = floor(sqrt(length(k_idx))); M = ceil(length(k_idx)/N);
-figure; set(gcf,'color','w');
-for i = 1:length(k_idx)
-    subplot(M,N,i);
-    imagesc(squeeze(S_sess{a}(k_idx(i),:,:)));
-    hold on; draw_trial_structure(data.ts);
-end
-
-%% discriminative neurons
-t = 2;
-figure; set(gcf,'color','w'); sc = 5;
-for a = 1:2
-    for i = 1:2
-        k_idx = disc_neuron{m,a,t,i};
-        if ~isempty(k_idx)
-            subplot(2,2,a+(i-1)*2); hold on;
-            plotTransients_nofig(squeeze(nanmean(S_sess{a}...
-                (k_idx,trial_group{m,1,t},:),2)), fr, sc, cc_tex{1});
-            plotTransients_nofig(squeeze(nanmean(S_sess{a}...
-                (k_idx,trial_group{m,2,t},:),2)), fr, sc, cc_tex{2});
-            draw_trial_structure(data.ts_fr(2:5));
-            title(area_str{a});
-        end
-    end
-end
-
-%% individual discriminative cells
-a = 1; t = 2; i = 1;
-tvec = (1:S_ts{6}(end))/dinfo.fr;
-ts_fr = cellfun(@(x) x/dinfo.fr, S_ts, 'uniformoutput', 0);
-
-k_idx = disc_neuron{m,a,t,i};
-[~,s_idx] = sort(trial_vec_sess, 'ascend');
-s_idx = s_idx(trial_vec_sess(s_idx)==1|trial_vec_sess(s_idx)==2);
-ns = sum(trial_vec_sess==1);
-N = floor(sqrt(length(k_idx))); M = ceil(length(k_idx)/N);
-
-cc = gray(100); 
-cc = cc(end:-1:1,:);
-
-figure; set(gcf,'color','w');
-for i = 1:length(k_idx)
-    subplot(M,N,i);
-    v = squeeze(S_sess{a}(k_idx(i),:,:));
-%     v = zscore_nan(v')';
-%     v = zscore_nan(v(:));
-%     v = reshape(v, data.trial_length, data.num_trial)';
-    imagesc(tvec, 1:length(s_idx), v(s_idx,:));
-    hold on; draw_trial_structure(ts_fr);
-    plot([tvec(1) tvec(end)], ns*[1 1], 'k:');
-    set(gca, 'xtick', [], 'ytick', []);
-%     caxis([0 0.6]);
-    caxis([0 5]);
-end
-colormap(cc);
-
-
-%% disc neuron avg
-a = 1;
-trial = [1,2];
-figure;
-for n = 1:ntw
-    subplot(ntw,1,n); hold on;
-    for t = 1:length(trial)
-        for i = 1:2
-            if ~all(isnan(disc_avg{m,a,n,trial(t),i}))
-                h = plot(disc_avg{m,a,n,trial(t),i}, 'color', cc_trial{2*trial(t)-1});
-                if i==2; set(h, 'linestyle', '--'); end
-            end
-        end
-    end
-    draw_trial_structure(standard_ts);
-end
-    
-%% joint disc neuron avg
-a = 1;
-target_tw = 5;
-trial = [1,2];
-figure;
-for n = 1:ntw
-    subplot(ntw,1,n); hold on;
-    for t = 1:length(trial)
-        for i = 1:2
-            if ~all(isnan(disc_joint_avg{m,a,n,target_tw,trial(t),i}))
-                h = plot(disc_joint_avg{m,a,n,target_tw,trial(t),i}, 'color', cc_trial{2*trial(t)-1});
-                if i==2; set(h, 'linestyle', '--'); end
-            end
-        end
-    end
-    draw_trial_structure(standard_ts);
-end
-
-
-end
-
 %% save
 save(fullfile(spath, [result_name '.mat']), 'responsive_neuron', ...
     'disc_neuron', 'resp_avg', 'disc_avg', 'num_responsive_overlap', 'num_disc_overlap',...
-    'disc_joint_avg', 'sess_idx', 'beh_rate', '-v7.3');
+    'disc_joint_avg', ...
+    'sess_idx', 'beh_rate', '-v7.3');
 
 end
 

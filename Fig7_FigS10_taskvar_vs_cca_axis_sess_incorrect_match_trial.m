@@ -19,11 +19,11 @@ opts.result_dir = 'results_suite2p';
 var_to_read = {'trial_vec', 'num_neuron', 'num_trial', 'trial_length', 'S_trial',  ...
     'ts', 'choice_time', 'task_label', 'F0', 'first_correct_lick'};
  
-dataset = [131:256, 388:672];
-% dataset = [452:529];
-dataset = dataset(end:-1:1);
+% dataset = [131:256, 388:672];
+% dataset = [517]; rep_list = [2,10];
+dataset = [608]; rep_list = [3,5,6,7,8];
 datasheet = get_data_sheet('multiarea');
-result_name = 'taskvar_vs_cca_axis_sess_pc30_tt_50_match_2_nozs';
+result_name = 'taskvar_vs_cca_axis_sess_pc30_weighted_tt_50_match';
 
 min_trial = 50;
 
@@ -42,8 +42,8 @@ sim_shuff_method = 'model';
 % var_thr = 70;
 
 max_pc = 30; 
-num_rep = 100;
-
+num_rep = 10;
+% rep_list = 1:num_rep;
 
 num_shuff = 100;
 num_shuff2 = 50;
@@ -72,12 +72,11 @@ for a = 1:2
 end
 
 % zscore each neuron
-% for a = 1:2
-%     v = reshape(permute(data.S_trial{a},[3,2,1]), [], data.num_neuron(a));
-%     v = zscore_nan(v, [], 1);
-%     data.S_trial{a} = permute(reshape(v, data.trial_length, data.num_trial, data.num_neuron(a)), [3,2,1]);
-% end
-
+for a = 1:2
+    v = reshape(permute(data.S_trial{a},[3,2,1]), [], data.num_neuron(a));
+    v = zscore_nan(v, [], 1);
+    data.S_trial{a} = permute(reshape(v, data.trial_length, data.num_trial, data.num_neuron(a)), [3,2,1]);
+end
 
 % align data
 for a = 1:2
@@ -131,7 +130,7 @@ while flag==0
         trial_idx{tt} = t_idx{tt}(1:N);
         t_idx{tt} = t_idx{tt}(N+1:end);
     end
-    if any(cellfun(@(x) length(x), trial_idx)<=5)
+    if any(cellfun(@(x) length(x), trial_idx)==0)
         break;
     end
     
@@ -157,23 +156,22 @@ while flag==0
 end
 
 %% repeat the random split many times, save to different files for now
-for rep_idx = 1:num_rep
+% for rep_idx = 1:num_rep
+for rep_idx = rep_list
     
     tic;
     result_file = fullfile(spath, sprintf('%s_rep_%d.mat', result_name, rep_idx));
-    if exist(result_file); continue; end
+    % if exist(result_file); continue; end
 
     
     %% bootstrap each trial type to match trial numbers
     t_idx_sess = cell(0, tnum);
-    t_idx_sess_idx = cell(num_sess,1);
     for m = 1:num_sess
         N = min([length(t_idx_sess_full{m,1}), length(t_idx_sess_full{m,2})]);
         for tt = 1:tnum
             rand_idx = randperm(length(t_idx_sess_full{m,tt}));
             rand_idx = rand_idx(1:N);
             t_idx_sess{m,tt} = t_idx_sess_full{m,tt}(rand_idx);
-            t_idx_sess_idx{m}(end+1:end+N) = tt;
         end
     end
 
@@ -201,10 +199,7 @@ for rep_idx = 1:num_rep
     for m = 1:num_sess
         for a = 1:2
             for i = 1:2
-                v0 = S_data{a}(idx_sub{m,a,i},sess_idx{m},:);
-                v0 = v0(:,cell2mat(t_idx_sess(m,:)),:);
-                v = reshape(permute(v0,[3,2,1]), [], N_sub(m,a,i));
-                % v = zscore_nan(v, [], 1);
+                v = reshape(permute(S_data{a}(idx_sub{m,a,i},sess_idx{m},:),[3,2,1]), [], N_sub(m,a,i));
                 v(isnan(v)) = 0;
                 [pc_coef{m,a,i}, ~, ~, ~, explained_raw, mu] = pca(v);
                 explained = cumsum(explained_raw);
@@ -214,33 +209,15 @@ for rep_idx = 1:num_rep
                 pca_weight{m,a,i} = explained_raw(1:S_num(m,a,i))'/100;
                 pc_coef{m,a,i} = pc_coef{m,a,i}(:,1:S_num(m,a,i));
                 for t = 1:data.trial_length
-                    v = v0(:,:,t); 
+                    v = S_data{a}(idx_sub{m,a,i},sess_idx{m},t); 
 %                     v(isnan(v)) = 0;
-                    sc = (v - mu'*ones(1,size(v0,2)))'*pc_coef{m,a,i};
+                    sc = (v - mu'*ones(1,length(sess_idx{m})))'*pc_coef{m,a,i};
                     data.S_pc{m,a,i}(:,:,t) = sc';
                 end
             end
         end
     end
     S_sess = data.S_pc;
-    
-    %% compute psth
-    % S_sess_resid = S_sess;
-    % for m = 1:num_sess
-    %     trial_label = data.trial_vec(sess_idx{m});
-    %     trial_label(trial_label>=4) = 0;
-    %     for a = 1:2
-    %         for n = 1:2
-    %             for tt = 1:tnum
-    %                 idx = trial_label==tt;
-    %                 s_avg = nanmean(S_sess{m,a,n}(:,idx,:),2);
-    %                 S_sess_resid{m,a,n}(:,idx,:) = S_sess{m,a,n}(:,idx,:) - repmat(s_avg,1,sum(idx),1);
-    %             end
-    %         end
-    %     end
-    % end
-
-    S_sess_resid = S_sess;
 
     %% task labels
     label = {data.task_label.cue_vec, ...
@@ -256,71 +233,40 @@ for rep_idx = 1:num_rep
         trial_vec_sess{m} = data.trial_vec(sess_idx{m});
         for k = 1:length(label)
             label_sess{m,k} = label{k}(sess_idx{m});
-            label_sess{m,k} = label_sess{m,k}(cell2mat(t_idx_sess(m,:)));
         end
     end
     K = length(label);
 
     %% compute task variable encoding direction 
-    pred_auc = nan(num_sess, K, tnum, 2, 2);
-    pred_auc_shuff = nan(num_sess, K, tnum, 2, num_shuff, 2);
-    task_axis = cell(num_sess, K, tnum, 2, 2);
+    task_axis = cell(num_sess, K, 2, 2);
     for k = 1:length(label)
         tw = decoder_tw{k};
         for m = 1:num_sess
             sess_N = length(sess_idx{m});
             for a = 1:2
                 for sub_idx = 1:2
-                    for tt = 1:tnum
-                        
-                        X = S_sess{m,a,sub_idx};
-                        Y = label_sess{m,k};
+                    
+                    X = S_sess{m,a,sub_idx};
+                    Y = label_sess{m,k};
+                    Y(trial_vec_sess{m}>8) = NaN;
+                    
+                    % take only correct trials
+                    X = X(:,t_idx_sess{m,1},:);
+                    Y = Y(t_idx_sess{m,1});
 
-                        % take only correct trials
-                        X = X(:,t_idx_sess_idx{m}==tt,:);
-                        Y = Y(t_idx_sess_idx{m}==tt);
-
-                        N = size(X,1);
-                        if sum(Y==1)==0 || sum(Y==2)==0
-                            task_axis{m,k,tt,a,sub_idx} = nan(S_num(m,a),1);
-                        end
-                        if isempty(X)
-                            task_axis{m,k,tt,a,sub_idx} = nan(S_num(m,a),1);
-                        end
-
-                        v1 = nanmean(nanmean(X(:,Y==1,tw),2),3);
-                        v2 = nanmean(nanmean(X(:,Y==2,tw),2),3);
-                        b = (v2-v1)/2;
-                        task_axis{m,k,tt,a,sub_idx} = b;
-
-                        %% projection and auc
-%                         b = task_axis{m,k,tt,a,sub_idx};
-                        b = task_axis{m,k,1,a,sub_idx};
-                        Xn = nanmean(X(:,:,tw), 3);
-                        pred = Xn'*b;
-
-                        %% shuffled control
-                        pred_shuff = nan(num_shuff, size(X,2));
-                        for s = 1:num_shuff
-                            Xs = nanmean(X(randperm(N),:,tw), 3);
-                            pred_shuff(s,:) = Xs'*b;
-                        end
-
-                        %% prediction auc
-                        x = pred';  y = Y';
-
-                        try; [~,~,~,pred_auc(m,k,tt,a,sub_idx)] = perfcurve(y, x, 2);
-                        end
-                        % shuffled
-                        ps = nan(1, num_shuff);
-                        parfor s = 1:num_shuff
-                            x = pred_shuff(s,:)'; y = Y';
-                            try; [~,~,~,ps(s)] = perfcurve(y, x, 2);
-                            end
-                        end
-                        pred_auc_shuff(m,k,tt,a,:,sub_idx) = ps;
-                        
+                    N = size(X,1);
+                    if sum(Y==1)==0 || sum(Y==2)==0
+                        task_axis{m,k,a,sub_idx} = nan(S_num(m,a),1);
                     end
+                    if isempty(X)
+                        task_axis{m,k,a,sub_idx} = nan(S_num(m,a),1);
+                    end
+                    
+                    v1 = nanmean(nanmean(X(:,Y==1,tw),2),3);
+                    v2 = nanmean(nanmean(X(:,Y==2,tw),2),3);
+%                     b = (v1+v2)/2;
+                    b = (v1-v2)/2;
+                    task_axis{m,k,a,sub_idx} = b;
                     
                 end
             end
@@ -345,9 +291,9 @@ for rep_idx = 1:num_rep
                     t = cca_tw{n}; 
                     t = t(t>=1 & t<=data.trial_length);
                     nx = S_num(m,1,i); ny = S_num(m,2,i); nxy = min(nx, ny);
-                    X = reshape(permute(S_sess_resid{m,1,i}(:,t_idx_sess_idx{m}==tt,t), ...
+                    X = reshape(permute(S_sess{m,1,i}(:,t_idx_sess{m,tt},t), ...
                         [3,2,1]), [], nx);
-                    Y = reshape(permute(S_sess_resid{m,2,i}(:,t_idx_sess_idx{m}==tt,t), ...
+                    Y = reshape(permute(S_sess{m,2,i}(:,t_idx_sess{m,tt},t), ...
                         [3,2,1]), [], ny);
                     keep_idx = (~isnan(X(:,1))) & (~isnan(Y(:,1)));
                     X = X(keep_idx,:); Y = Y(keep_idx,:);
@@ -363,8 +309,8 @@ for rep_idx = 1:num_rep
                         % shuffled
                         rs = nan(1,num_shuff);
                         Ai = nan(nx,nxy,num_shuff); Bi = nan(ny,nxy,num_shuff); 
-                        Y0 = S_sess_resid{m,2,i}(:,t_idx_sess_idx{m}==tt,t);
-                        N = sum(t_idx_sess_idx{m}==tt);
+                        Y0 = S_sess{m,2,i}(:,t_idx_sess{m,tt},t);
+                        N = length(t_idx_sess{m,tt});
 %                         for s = 1:num_shuff
                         parfor s = 1:num_shuff
                             s_idx = randperm(nt);
@@ -421,9 +367,9 @@ for rep_idx = 1:num_rep
                     t = cca_tw{n}; 
                     t = t(t>=1 & t<=data.trial_length);
                     nx = S_num(m,a,1); ny = S_num(m,a,2); nxy = min(nx, ny);
-                    X = reshape(permute(S_sess_resid{m,a,1}(:,t_idx_sess_idx{m}==tt,t), ...
+                    X = reshape(permute(S_sess{m,a,1}(:,t_idx_sess{m,tt},t), ...
                         [3,2,1]), [], nx);
-                    Y = reshape(permute(S_sess_resid{m,a,2}(:,t_idx_sess_idx{m}==tt,t), ...
+                    Y = reshape(permute(S_sess{m,a,2}(:,t_idx_sess{m,tt},t), ...
                         [3,2,1]), [], ny);
 %                     X = nanmean(S_sess_resid{m,a,1}(:,t_idx_sess{m,tt},t), 3)';
 %                     Y = nanmean(S_sess_resid{m,a,2}(:,t_idx_sess{m,tt},t), 3)';
@@ -441,8 +387,8 @@ for rep_idx = 1:num_rep
                         % shuffled
                         rs = nan(1,num_shuff);
                         Ai = nan(nx,nxy,num_shuff); Bi = nan(ny,nxy,num_shuff); 
-                        Y0 = S_sess_resid{m,a,2}(:,t_idx_sess_idx{m}==tt,t);
-                        N = sum(t_idx_sess_idx{m}==tt);
+                        Y0 = S_sess{m,a,2}(:,t_idx_sess{m,tt},t);
+                        N = length(t_idx_sess{m,tt});
                         parfor s = 1:num_shuff
                             s_idx = randperm(nt);
                             if strcmp(shuffle_method, 'trial')
@@ -492,7 +438,7 @@ for rep_idx = 1:num_rep
         for a = 1:2
             for sub_idx = 1:2
                 for tt = 1:tnum
-                    b1 = cell2mat(task_axis(m,:,1,a,sub_idx))';  % correct trial axis
+                    b1 = cell2mat(task_axis(m,:,a,sub_idx))';
                     b2 = cellfun(@(x) x(:,1), cca_model_tt_sub(m,:,tt,a,sub_idx), 'uniformoutput', 0);
                     b2 = cell2mat(b2)';
                     if weighted_sim  % weight similarity
@@ -532,7 +478,7 @@ for rep_idx = 1:num_rep
         for a = 1:2
             for sub_idx = 1:2
                 for tt = 1:tnum
-                    b1 = cell2mat(task_axis(m,:,1,a,sub_idx))';  % correct trial axis
+                b1 = cell2mat(task_axis(m,:,a,sub_idx))';
                     b2 = cellfun(@(x) x(:,1), cca_model_within_tt(m,:,tt,a,sub_idx), 'uniformoutput', 0);
                     b2 = cell2mat(b2)';
                     if weighted_sim  % weight similarity
@@ -779,14 +725,15 @@ for rep_idx = 1:num_rep
     for k = 1:K
         for m = 1:num_sess
             for tt = 1:tnum
-                Y = label_sess{m,k}(t_idx_sess_idx{m}==tt)';
+                Y = label_sess{m,k}(t_idx_sess{m,tt})';
+                Y(trial_vec_sess{m}(t_idx_sess{m,tt})>8) = NaN;
                 keep_idx = (~isnan(Y)) & (Y~=0);
                 Y = Y(keep_idx);
                 nt = sum(keep_idx);
                 if isempty(Y); continue; end
                 for a = 1:2
                     for sub_idx = 1:2
-                        X = S_sess{m,a,sub_idx}(:,t_idx_sess_idx{m}==tt,:);
+                        X = S_sess{m,a,sub_idx}(:,t_idx_sess{m,tt},:);
                         X = X(:,keep_idx,:); 
                         N = S_num(m,a,sub_idx);
                         for t = 1:ntw
@@ -872,7 +819,6 @@ end
 %% save
 save(result_file, 'beh_rate', 'sess_idx', 'num_sess', 'S_num',...
     'var_explained', 'task_axis', 'ts', 't_idx_sess',...
-    'pred_auc', 'pred_auc_shuff', ...
     'ncv_tt_sub', 'cca_r_tt_sub', 'cca_r_tt_sub_shuff', 'ncv_within_tt', ...
     'cca_r_within_tt', 'cca_r_within_tt_shuff', ...
     'svm_cca_sim_tt', 'svm_cca_sim_tt_within', 'cca_sim_tt_sub', ...
