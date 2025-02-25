@@ -231,21 +231,6 @@ legend(h, ts_str(tw));
 linkaxes;
 
 % fdr control
-% fdr_all = zeros(size(pval_all));
-% for a = 1:3
-%     tmp = mafdr(reshape(pval_all(:,:,a), [], 1));
-%     fdr_all(:,:,a) = reshape(tmp, size(pval_all,1), size(pval_all, 2));
-%     subplot(1, 3, a); hold on;
-%     for n = 1:length(tw)
-%         for i = 2:nbins
-%             if fdr_all(n,i-1,a)<0.05
-%                 plot_pval_star(rate_bin_center(i), pval_y(n,i-1,a), pval_all(n,i-1,a));
-%             end
-%         end
-%     end
-% end
-
-% fdr control
 fdr_all = zeros(size(pval_all));
 tmp = mafdr(reshape(pval_all, [], 1));
 fdr_all = reshape(tmp, size(pval_all,1), size(pval_all, 2), size(pval_all, 3));
